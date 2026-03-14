@@ -814,6 +814,17 @@
     border: 2px solid rgba(232,184,75,0.3);
     flex-shrink: 0;
   }
+  .foto-thumb-wrap::after {
+    content: '📷';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 20px;
+    pointer-events: none;
+    opacity: 0;
+  }
+  .foto-thumb-wrap.foto-erro::after { opacity: 1; }
+  .foto-thumb-wrap.foto-erro .foto-thumb { opacity: 0; }
   .foto-thumb {
     width: 100%; height: 100%;
     object-fit: cover;
@@ -1425,6 +1436,9 @@
       </button>
     </div>
     <button class="btn-novo-cadastro" onclick="mostrarFormNovo()">+ Novo gerente / outra loja</button>
+    <button onclick="abrirManual()" style="width:100%;background:transparent;border:1.5px solid rgba(232,184,75,0.35);color:var(--accent);border-radius:4px;padding:11px 16px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px">
+      📖 TIRE DÚVIDAS — MANUAL DE USO
+    </button>
     <div class="date-display" id="login-date-ret"></div>
   </div>
 
@@ -1468,6 +1482,7 @@
       </div>
     </div>
     <button class="btn-start" id="btn-iniciar-checklist" onclick="iniciarChecklist()">▶ INICIAR CHECKLIST DO DIA</button>
+    <button onclick="abrirManual()" style="width:100%;background:transparent;border:1.5px solid rgba(232,184,75,0.35);color:var(--accent);border-radius:4px;padding:11px 16px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px">📖 TIRE DÚVIDAS — MANUAL DE USO</button>
     <div id="btn-recuperar-wrap" style="display:none;margin-top:10px">
       <button onclick="recuperarBackup()" style="width:100%;background:transparent;border:1.5px solid rgba(52,152,219,0.4);color:#3498db;border-radius:4px;padding:11px 16px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;transition:border-color 0.2s,background 0.2s;display:flex;align-items:center;justify-content:center;gap:8px" onmouseover="this.style.background='rgba(52,152,219,0.08)'" onmouseout="this.style.background='transparent'">
         🔄 <span id="btn-recuperar-txt">Recuperar último checklist salvo</span>
@@ -1969,6 +1984,7 @@ let respostas = {}; // { id: 'sim'|'nao' }
 let obs = {};       // { id: 'texto...' }
 let horarios = {};  // { id: 'HH:MM' }
 let fotos = {};     // { id: ['base64...', ...] }
+let _respostasSnapshot = null;
 const STORAGE_KEY = 'shoemix_checklist_v2';
 let autoSaveTimer = null;
 let itemPendenteSim = null;
@@ -2558,12 +2574,26 @@ function adicionarFotos(id, input) {
   let pendentes = files.length;
   if (pendentes === 0) return;
 
+  function finalizarFoto(dataUrl) {
+    if (dataUrl) fotos[id].push(dataUrl);
+    pendentes--;
+    if (pendentes === 0) {
+      const baseId = id.replace(/_d[12]$/, '');
+      const el = document.getElementById(`item-${baseId}`);
+      const item = encontrarItem(id);
+      if (el && item) el.innerHTML = buildItem(item);
+      autoSave();
+    }
+  }
+
   files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      // Reduz a imagem antes de salvar (max 800px lado maior)
-      const img = new Image();
-      img.onload = () => {
+    // Usa URL.createObjectURL — leve, não carrega tudo na RAM de uma vez
+    // Funciona em qualquer Android Chrome moderno
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      try {
         const MAX = 800;
         let w = img.width, h = img.height;
         if (w > MAX || h > MAX) {
@@ -2572,21 +2602,39 @@ function adicionarFotos(id, input) {
         }
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        fotos[id].push(canvas.toDataURL('image/jpeg', 0.75));
-        pendentes--;
-        if (pendentes === 0) {
-          // Para slots _d1/_d2 o elemento pai é item-baseId
-          const baseId = id.replace(/_d[12]$/, '');
-          const el = document.getElementById(`item-${baseId}`);
-          const item = encontrarItem(id);
-          if (el && item) el.innerHTML = buildItem(item);
-          autoSave();
-        }
-      };
-      img.src = e.target.result;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('no ctx');
+        ctx.drawImage(img, 0, 0, w, h);
+        const data = canvas.toDataURL('image/jpeg', 0.72);
+        // Valida: base64 real começa com data:image e tem tamanho mínimo
+        if (!data || !data.startsWith('data:image') || data.length < 1000) throw new Error('invalid');
+        // Valida renderizando em img temporário antes de aceitar
+        const teste = new Image();
+        teste.onload = () => finalizarFoto(data);
+        teste.onerror = () => {
+          // Canvas gerou base64 inválido — usa FileReader direto
+          const reader = new FileReader();
+          reader.onload = e => finalizarFoto(e.target.result);
+          reader.onerror = () => finalizarFoto(null);
+          reader.readAsDataURL(file);
+        };
+        teste.src = data;
+      } catch(err) {
+        const reader = new FileReader();
+        reader.onload = e => finalizarFoto(e.target.result);
+        reader.onerror = () => finalizarFoto(null);
+        reader.readAsDataURL(file);
+      }
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      // Se objectUrl falhar, tenta FileReader direto
+      const reader = new FileReader();
+      reader.onload = e => finalizarFoto(e.target.result);
+      reader.onerror = () => finalizarFoto(null);
+      reader.readAsDataURL(file);
+    };
+    img.src = objectUrl;
   });
   input.value = '';
 }
@@ -2968,7 +3016,7 @@ function abrirModal() {
     }
   } catch(e) {}
   // Bloqueia finalização no Dia 1 do ciclo (exceto quando finalizando ciclo anterior vencido)
-  if (!modoFinalizandoVencido && getDiaSlot() === 1 && getCicloAtual(hoje())) {
+  if (!modoSomenteLeitura && !modoFinalizandoVencido && getDiaSlot() === 1 && getCicloAtual(hoje())) {
     const ciclo = getCicloAtual(hoje());
     const nomeFim = new Date(ciclo.fim+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long'});
     alert(`⚠️ Finalização bloqueada.\n\nVocê está no Dia 1 do ciclo. Preencha também os itens da ${nomeFim} antes de finalizar.`);
@@ -3405,6 +3453,7 @@ function enviarParaSupervisao() {
 
   // Abre janela de impressão/PDF
   const win = window.open('', '_blank');
+  if (!win) { alert('⚠️ Popup bloqueado pelo navegador. Permita popups para este site e tente novamente.'); return; }
   win.document.write(pdfHTML);
   win.document.close();
   win.focus();
@@ -3889,6 +3938,7 @@ function gerarPDFJustificativa() {
   </body></html>`;
 
   const win = window.open('', '_blank');
+  if (!win) { alert('⚠️ Popup bloqueado pelo navegador. Permita popups para este site e tente novamente.'); return; }
   win.document.write(pdfHTML);
   win.document.close();
   win.focus();
@@ -4220,6 +4270,7 @@ function salvarChecklistVencido() {
         <div class="meta">Registrado em: ${agora.toLocaleDateString('pt-BR')} às ${horaStr}</div>
       </div></body></html>`;
     const win = window.open('', '_blank');
+    if (!win) { alert('⚠️ Popup bloqueado pelo navegador. Permita popups para este site e tente novamente.'); return; }
     win.document.write(pdfHTML);
     win.document.close();
     win.focus();
@@ -4394,6 +4445,7 @@ function recuperarBackup() {
 
     const pdfHTML = buildPDFHTML(dataStr, horaStr, p);
     const win = window.open('', '_blank');
+    if (!win) { alert('⚠️ Popup bloqueado pelo navegador. Permita popups para este site e tente novamente.'); return; }
     win.document.write(pdfHTML);
     win.document.close();
     win.focus();
@@ -4538,6 +4590,7 @@ function reabrirUltimoPDF() {
     }
 
     const win = window.open('', '_blank');
+    if (!win) { alert('⚠️ Popup bloqueado pelo navegador. Permita popups para este site e tente novamente.'); return; }
     win.document.write(pdfHTML);
     win.document.close();
     win.focus();
@@ -4551,6 +4604,14 @@ function reabrirUltimoPDF() {
 document.getElementById('login-date').textContent = formatDate(new Date());
 if (document.getElementById('login-date-ret'))
   document.getElementById('login-date-ret').textContent = formatDate(new Date());
+
+// Handler global para thumbnails com imagem quebrada
+document.addEventListener('error', function(e) {
+  if (e.target && e.target.classList && e.target.classList.contains('foto-thumb')) {
+    const wrap = e.target.closest('.foto-thumb-wrap');
+    if (wrap) wrap.classList.add('foto-erro');
+  }
+}, true);
 
 window.addEventListener('load', () => {
   // Migração: apaga snapshots antigos sem campo 'justif' para forçar regeneração com dados completos
@@ -4924,3 +4985,179 @@ function confirmarEnvioLoginFn() {
 </script>
 </body>
 </html>
+
+<!-- ═══════════ MODAL MANUAL ═══════════ -->
+<div id="modal-manual" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.85);overflow-y:auto;padding:20px 0;">
+  <div style="max-width:680px;margin:0 auto;background:#111318;border-radius:10px;border:1px solid rgba(232,184,75,0.2);overflow:hidden;position:relative;">
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#0a0a0a,#1a1a2e);padding:24px 24px 16px;border-bottom:1px solid rgba(232,184,75,0.15);display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--accent);letter-spacing:0.08em">SHOEMIX</div>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase">Manual de Treinamento · Checklist Gerencial</div>
+      </div>
+      <button onclick="fecharManual()" style="background:rgba(255,255,255,0.08);border:none;color:#fff;font-size:22px;cursor:pointer;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
+    </div>
+    <!-- Índice -->
+    <div style="padding:20px 24px 0;display:flex;flex-wrap:wrap;gap:8px;" id="manual-indice"></div>
+    <!-- Conteúdo -->
+    <div style="padding:24px;" id="manual-conteudo"></div>
+    <!-- Rodapé -->
+    <div style="padding:16px 24px;border-top:1px solid rgba(232,184,75,0.1);text-align:center;font-family:'Barlow Condensed',sans-serif;font-size:12px;color:var(--muted)">
+      Dúvidas? Ligue para Ederson · (16) 98214-6043 · Versão 1.0 · 2026
+    </div>
+  </div>
+</div>
+
+<script>
+const MANUAL_SECOES = [
+  { id:'s1', titulo:'O Que É?', icone:'📋', conteudo:`
+    <h3>O Que É o Checklist Gerencial?</h3>
+    <p>O Checklist Gerencial Diário da Shoemix garante que todos os processos essenciais da loja sejam verificados diariamente. Funciona como roteiro de gestão que o gerente percorre ao longo de cada dia — não é burocracia, é garantia de qualidade.</p>
+    <div class="man-box">📌 <strong>Propósito:</strong> Garantir que nenhum processo crítico seja esquecido e que o Sr. Leonardo tenha visibilidade diária do que acontece em cada unidade.</div>
+    <table class="man-table">
+      <tr><th>#</th><th>Área</th><th>O que verifica</th></tr>
+      <tr><td>1</td><td>Abertura da Loja</td><td>Horário, maquininhas, troco, limpeza, iluminação, equipe, vitrine</td></tr>
+      <tr><td>2</td><td>Vendas e Atendimento</td><td>Desempenho, abordagem, entrevista, metas, apps, preços</td></tr>
+      <tr><td>3</td><td>Estoque e Produtos</td><td>Notas fiscais, etiquetagem, transferências, recebimento, organização</td></tr>
+      <tr><td>4</td><td>Visual Merchandising</td><td>Bancas, frente de loja, comunicação visual, setores, materiais</td></tr>
+      <tr><td>5</td><td>Equipe e RH</td><td>Uniformes, apresentação pessoal, ocorrências gerenciais</td></tr>
+    </table>` },
+  { id:'s2', titulo:'Ciclos e Dias', icone:'📅', conteudo:`
+    <h3>Lógica dos Ciclos Semanais</h3>
+    <p>O sistema trabalha em <strong>ciclos de 2 dias</strong>. Cada item tem dois slots — Dia 1 e Dia 2 — e o checklist precisa ser preenchido nos dois dias para ser considerado completo.</p>
+    <table class="man-table">
+      <tr><th>Ciclo</th><th>Dias</th><th>O que acontece</th></tr>
+      <tr><td>Ciclo 1</td><td>Segunda + Terça</td><td>Dia 1 = Segunda (Dia 2 bloqueado). Dia 2 = Terça (Dia 1 somente leitura).</td></tr>
+      <tr><td>Ciclo 2</td><td>Quarta + Quinta</td><td>Mesma lógica: preencher Quarta, completar na Quinta.</td></tr>
+      <tr><td>Ciclo 3</td><td>Sexta + Sábado</td><td>Mesma lógica: preencher Sexta, completar no Sábado.</td></tr>
+    </table>
+    <div class="man-box man-alert">⚠️ <strong>Prazo encerrado:</strong> Se abrir o sistema em um novo ciclo sem finalizar o anterior, o sistema detecta automaticamente e exige justificativa antes de liberar o próximo ciclo.</div>` },
+  { id:'s3', titulo:'Login e Início', icone:'🔑', conteudo:`
+    <h3>Acessando o Sistema</h3>
+    <p>Preencha: <strong>nome do gerente</strong>, <strong>número da loja</strong> e <strong>cidade</strong>. Clique em <strong>INICIAR CHECKLIST</strong>. Se já iniciou hoje, o botão muda para <strong>CONTINUAR CHECKLIST DE HOJE</strong>.</p>
+    <div class="man-box">💡 <strong>Dica:</strong> Salve o link na tela inicial do celular como atalho para acessar rapidamente todos os dias.</div>` },
+  { id:'s4', titulo:'Preenchendo — Dia 1', icone:'✅', conteudo:`
+    <h3>Responder Itens, Comentários e Fotos</h3>
+    <p>Para cada item você tem duas opções:</p>
+    <ul>
+      <li>✔ <strong>Sim, Visto</strong> — o processo foi verificado e está em ordem (abre campo de observação obrigatório)</li>
+      <li>✗ <strong>Não Visto</strong> — o processo não foi verificado ou está com problema</li>
+    </ul>
+    <div class="man-box">📷 <strong>Fotos:</strong> Clique em 📷 Foto em qualquer item para anexar evidências. As fotos aparecem no Dia 2 para consulta e são incluídas no PDF final.</div>` },
+  { id:'s5', titulo:'Dia 2 — Retomada', icone:'🔄', conteudo:`
+    <h3>Tela de Retomada e Slots Travados</h3>
+    <p>Os slots do Dia 1 ficam <strong>visíveis mas travados</strong> — respostas, horários, observações e fotos aparecem para consulta, mas não podem ser editados.</p>
+    <div class="man-box">⚠️ Hoje é o último dia do ciclo! Preencha os itens de hoje e finalize até o fim do dia.</div>` },
+  { id:'s6', titulo:'Todos os Itens', icone:'📝', conteudo:`
+    <h3>Os 25 Itens das 5 Áreas</h3>
+    <p><strong>🏪 Abertura da Loja</strong></p>
+    <ul><li>Horário de Abertura</li><li>Maquininhas de Cartão e Troco</li><li>Planejamento de Equipe — Abertura e Faltas</li><li>Banco de Horas e Folgas</li><li>Limpeza Inicial da Loja e Café</li><li>Falta de Produtos na Vitrine</li><li>Iluminação, Ar-Condicionado e Som Ambiente</li></ul>
+    <p><strong>🛍️ Vendas e Atendimento</strong></p>
+    <ul><li>Utilização de Aplicativos pelos Vendedores</li><li>Listagem de Preços, Alterações e Promoções</li><li>Desempenho da Equipe de Vendas</li><li>Abordagem e Oferta de Produtos Complementares</li><li>Entrevista dos Vendedores com o Cliente</li><li>Vendas Perdidas por Falta de Produto</li><li>Metas por Departamentos</li><li>Produtos Mais Vendidos — Relatórios</li></ul>
+    <p><strong>📦 Estoque e Produtos</strong></p>
+    <ul><li>Notas Fiscais e Etiquetagem</li><li>Produtos Recebidos Expostos</li><li>Transferências e Remanejamentos — Prazo</li><li>Limpeza e Organização do Estoque</li><li>Excesso de Produtos — Acessórios e Roupas</li></ul>
+    <p><strong>🎨 Visual Merchandising</strong></p>
+    <ul><li>Reposição de Bancas e Frente de Loja</li><li>Manutenção dos Outros Setores</li><li>Qualidade dos Materiais de Vitrine</li></ul>
+    <p><strong>👥 Equipe e RH</strong></p>
+    <ul><li>Uniformes e Apresentação da Equipe</li><li>Acontecimento que Exigiu Ação Gerencial</li></ul>` },
+  { id:'s7', titulo:'PDF e Finalização', icone:'📄', conteudo:`
+    <h3>Modal de Resumo e Regra dos 70%</h3>
+    <ol>
+      <li>O sistema marca automaticamente como "Não Visto" os itens sem resposta</li>
+      <li>Calcula o percentual de conformidade (itens "Sim, Visto" ÷ total)</li>
+      <li>Se abaixo de 70%, solicita justificativa por escrito antes de continuar</li>
+      <li>Gera e abre o PDF completo com o relatório dos dois dias do ciclo</li>
+    </ol>
+    <div class="man-box man-alert">📊 <strong>Regra dos 70%:</strong> O mínimo esperado é 70% dos itens marcados como "Sim, Visto". Abaixo disso, o sistema exige justificativa escrita antes de gerar o PDF.</div>` },
+  { id:'s8', titulo:'Envio WhatsApp', icone:'💬', conteudo:`
+    <h3>Enviando para a Supervisão</h3>
+    <ol>
+      <li>Salve o PDF no dispositivo quando abrir para impressão</li>
+      <li>Clique em <strong>ABRIR WHATSAPP — Sr. Leonardo · (16) 98117-5458</strong></li>
+      <li>Envie o PDF salvo na conversa do WhatsApp</li>
+      <li>Volte ao sistema e marque: <em>"Confirmo que enviei o PDF"</em></li>
+      <li>Clique em <strong>INICIAR NOVO DIA</strong> para liberar o próximo ciclo</li>
+    </ol>
+    <div class="man-box man-alert">🔒 <strong>Bloqueio até confirmação:</strong> O novo ciclo só é liberado após confirmar o envio. Essa trava garante que a supervisão receba todos os relatórios.</div>` },
+  { id:'s9', titulo:'Situações Especiais', icone:'⚙️', conteudo:`
+    <h3>Desbloqueio Gerencial, Backup, Reabrir PDF</h3>
+    <div class="man-box">🔐 <strong>Desbloqueio Gerencial:</strong> Use apenas em situações excepcionais autorizadas pelo Sr. Leonardo. Requer senha fornecida pela supervisão — não compartilhe com vendedores.</div>
+    <div class="man-box">📄 <strong>Reabrir Último PDF:</strong> O botão "Reabrir último PDF gerado" permite reimprimir ou reenviar o relatório do ciclo anterior a qualquer momento.</div>
+    <div class="man-box">💾 <strong>Backup Automático:</strong> O sistema mantém backup das últimas respostas. Se o navegador fechar acidentalmente, ao reabrir seus dados estarão preservados.</div>` },
+  { id:'s10', titulo:'Prazo Encerrado', icone:'⏰', conteudo:`
+    <h3>Como Justificar Ciclo Não Realizado</h3>
+    <p>Preencha: nome, loja, cidade e justificativa (mínimo 10 caracteres). O sistema gera um PDF de justificativa, abre a tela de envio WhatsApp e libera o novo ciclo após confirmação.</p>
+    <div class="man-box">
+      <strong>Dois casos diferentes:</strong><br>
+      <strong>Caso 1</strong> — Checklist iniciado mas não finalizado: o sistema mostra o que foi preenchido e finaliza com os dados existentes.<br>
+      <strong>Caso 2</strong> — Ciclo completamente não realizado: exige preenchimento da justificativa antes de qualquer ação.
+    </div>` },
+  { id:'s11', titulo:'Perguntas Frequentes', icone:'❓', conteudo:`
+    <h3>Dúvidas Comuns dos Gerentes</h3>
+    <div class="man-faq"><strong>Posso preencher parcialmente e terminar depois?</strong><p>Sim. O sistema salva automaticamente a cada resposta. Feche e reabra quantas vezes quiser — os dados ficam preservados.</p></div>
+    <div class="man-faq"><strong>O que acontece se eu marcar um item errado?</strong><p>Para itens "Sim, Visto" aparece o botão ↩ Desfazer. Para "Não Visto", basta clicar novamente nas opções.</p></div>
+    <div class="man-faq"><strong>O Dia 2 começa do zero?</strong><p>Não. O Dia 2 mantém todos os dados do Dia 1 (somente leitura). Você preenche apenas os novos slots do Dia 2.</p></div>
+    <div class="man-faq"><strong>Posso finalizar no Dia 1?</strong><p>Não. O botão de finalização fica bloqueado no Dia 1. O sistema exige que ambos os dias sejam registrados.</p></div>
+    <div class="man-faq"><strong>O PDF inclui os dois dias?</strong><p>Sim. O PDF contém respostas, horários, observações e fotos dos dois dias do ciclo.</p></div>
+    <div class="man-faq"><strong>O que fazer se o WhatsApp não abrir?</strong><p>Salve o PDF e envie manualmente para (16) 98117-5458. Após enviar, confirme no checkbox do sistema.</p></div>
+    <div class="man-faq"><strong>E se eu trocar de dispositivo?</strong><p>O sistema salva localmente. Se trocar o dispositivo durante um ciclo, os dados não estarão no novo aparelho. Use sempre o mesmo dispositivo no ciclo.</p></div>
+    <div class="man-faq"><strong>Posso usar o mesmo arquivo em mais de uma loja?</strong><p>Não. Cada loja deve ter seu próprio arquivo. Os dados de uma loja não interferem na outra.</p></div>
+    <div class="man-faq"><strong>O que significa o percentual na tela de envio?</strong><p>É o percentual de conformidade: itens "Sim, Visto" ÷ total. Mínimo esperado: 70%.</p></div>` }
+];
+
+const MANUAL_CSS = `
+  #modal-manual h3 { font-family:'Barlow Condensed',sans-serif; font-size:20px; color:var(--accent); text-transform:uppercase; letter-spacing:0.06em; margin:0 0 14px; }
+  #modal-manual p, #modal-manual li { font-family:'Barlow Condensed',sans-serif; font-size:15px; color:#ccc; line-height:1.6; margin-bottom:8px; }
+  #modal-manual ul, #modal-manual ol { padding-left:20px; margin-bottom:14px; }
+  #modal-manual strong { color:#fff; }
+  .man-box { background:rgba(232,184,75,0.07); border-left:3px solid var(--accent); border-radius:4px; padding:12px 14px; margin:12px 0; font-family:'Barlow Condensed',sans-serif; font-size:14px; color:#ccc; line-height:1.6; }
+  .man-alert { background:rgba(231,76,60,0.07); border-left-color:var(--red); }
+  .man-table { width:100%; border-collapse:collapse; margin:12px 0; font-family:'Barlow Condensed',sans-serif; font-size:14px; }
+  .man-table th { background:rgba(232,184,75,0.12); color:var(--accent); padding:8px 10px; text-align:left; font-weight:700; letter-spacing:0.05em; }
+  .man-table td { padding:7px 10px; color:#ccc; border-bottom:1px solid rgba(255,255,255,0.05); }
+  .man-faq { background:rgba(255,255,255,0.03); border-radius:6px; padding:12px 14px; margin-bottom:10px; }
+  .man-faq strong { font-family:'Barlow Condensed',sans-serif; font-size:15px; color:#fff; display:block; margin-bottom:4px; }
+  .man-faq p { margin:0; font-size:14px; }
+  .man-tab { font-family:'Barlow Condensed',sans-serif; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; padding:6px 10px; border-radius:4px; cursor:pointer; border:1px solid rgba(232,184,75,0.25); background:transparent; color:var(--muted); transition:all 0.2s; white-space:nowrap; }
+  .man-tab:hover, .man-tab.ativo { background:rgba(232,184,75,0.12); color:var(--accent); border-color:var(--accent); }
+`;
+
+function abrirManual(secao) {
+  // Injeta CSS se ainda não foi injetado
+  if (!document.getElementById('manual-style')) {
+    const st = document.createElement('style');
+    st.id = 'manual-style';
+    st.textContent = MANUAL_CSS;
+    document.head.appendChild(st);
+  }
+  // Monta índice
+  const indice = document.getElementById('manual-indice');
+  indice.innerHTML = MANUAL_SECOES.map(s =>
+    `<button class="man-tab" id="tab-${s.id}" onclick="mostrarSecaoManual('${s.id}')">${s.icone} ${s.titulo}</button>`
+  ).join('');
+  // Mostra primeira seção ou a solicitada
+  mostrarSecaoManual(secao || 's1');
+  document.getElementById('modal-manual').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+
+function mostrarSecaoManual(id) {
+  const secao = MANUAL_SECOES.find(s => s.id === id);
+  if (!secao) return;
+  document.getElementById('manual-conteudo').innerHTML = secao.conteudo;
+  document.querySelectorAll('.man-tab').forEach(t => t.classList.remove('ativo'));
+  const tab = document.getElementById('tab-' + id);
+  if (tab) { tab.classList.add('ativo'); tab.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' }); }
+  document.getElementById('manual-conteudo').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function fecharManual() {
+  document.getElementById('modal-manual').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+// Fechar clicando fora
+document.getElementById('modal-manual').addEventListener('click', function(e) {
+  if (e.target === this) fecharManual();
+});
+</script>
