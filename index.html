@@ -1436,6 +1436,9 @@
       </button>
     </div>
     <button class="btn-novo-cadastro" onclick="mostrarFormNovo()">+ Novo gerente / outra loja</button>
+    <button onclick="abrirHistorico()" style="width:100%;background:transparent;border:1.5px solid rgba(52,152,219,0.35);color:#3498db;border-radius:4px;padding:11px 16px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px">
+      📊 HISTÓRICO DE CICLOS
+    </button>
     <button onclick="abrirManual()" style="width:100%;background:transparent;border:1.5px solid rgba(232,184,75,0.35);color:var(--accent);border-radius:4px;padding:11px 16px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px">
       📖 TIRE DÚVIDAS — MANUAL DE USO
     </button>
@@ -1483,6 +1486,9 @@
     </div>
     <button class="btn-start" id="btn-iniciar-checklist" onclick="iniciarChecklist()">▶ INICIAR CHECKLIST DO DIA</button>
     <button onclick="abrirManual()" style="width:100%;background:transparent;border:1.5px solid rgba(232,184,75,0.35);color:var(--accent);border-radius:4px;padding:11px 16px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px">📖 TIRE DÚVIDAS — MANUAL DE USO</button>
+    <button onclick="abrirHistorico()" style="width:100%;background:transparent;border:1.5px solid rgba(52,152,219,0.35);color:#3498db;border-radius:4px;padding:11px 16px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px">
+      📊 HISTÓRICO DE CICLOS
+    </button>
     <div id="btn-recuperar-wrap" style="display:none;margin-top:10px">
       <button onclick="recuperarBackup()" style="width:100%;background:transparent;border:1.5px solid rgba(52,152,219,0.4);color:#3498db;border-radius:4px;padding:11px 16px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;transition:border-color 0.2s,background 0.2s;display:flex;align-items:center;justify-content:center;gap:8px" onmouseover="this.style.background='rgba(52,152,219,0.08)'" onmouseout="this.style.background='transparent'">
         🔄 <span id="btn-recuperar-txt">Recuperar último checklist salvo</span>
@@ -3476,6 +3482,31 @@ function enviarParaSupervisao() {
 
   // Limpar storage, registrar último dia finalizado e resetar modo
   localStorage.removeItem(STORAGE_KEY);
+  // Salva no histórico de ciclos
+  try {
+    const HIST_KEY = 'shoemix_historico';
+    const hist = JSON.parse(localStorage.getItem(HIST_KEY) || '[]');
+    const totalDia = CATEGORIAS.reduce((a,c) => a + c.itens.filter(i=>i.diario).length, 0);
+    let d1Sim=0, d2Sim=0;
+    CATEGORIAS.forEach(cat => cat.itens.forEach(item => {
+      if (!item.diario) return;
+      if (respostas[item.id+'_d1']==='sim') d1Sim++;
+      if (respostas[item.id+'_d2']==='sim') d2Sim++;
+    }));
+    const cicloHist = modoFinalizandoVencido ? getCicloAnterior() : getCicloAtual(hoje());
+    const entrada = {
+      data: new Date().toISOString(),
+      ciclo: cicloHist ? { inicio: cicloHist.inicio, fim: cicloHist.fim } : null,
+      gerente: { nome: gerente.nome, loja: gerente.loja, cidade: gerente.cidade },
+      pctGeral: p.pctSim,
+      d1: { sim: d1Sim, total: totalDia, pct: totalDia ? Math.round((d1Sim/totalDia)*100) : 0 },
+      d2: { sim: d2Sim, total: totalDia, pct: totalDia ? Math.round((d2Sim/totalDia)*100) : 0 },
+    };
+    hist.unshift(entrada);
+    if (hist.length > 30) hist.splice(30);
+    localStorage.setItem(HIST_KEY, JSON.stringify(hist));
+  } catch(e) {}
+
   // Salva ciclo como concluído
   try {
     // Se estamos finalizando um ciclo vencido, salva o ciclo CORRETO (passado, não hoje)
@@ -5159,5 +5190,120 @@ function fecharManual() {
 // Fechar clicando fora
 document.getElementById('modal-manual').addEventListener('click', function(e) {
   if (e.target === this) fecharManual();
+});
+</script>
+
+<!-- ═══════════ MODAL HISTÓRICO ═══════════ -->
+<div id="modal-historico" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.88);overflow-y:auto;padding:20px 0;">
+  <div style="max-width:600px;margin:0 auto;background:#111318;border-radius:10px;border:1px solid rgba(52,152,219,0.25);overflow:hidden;">
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#0a0a0a,#0f1a2e);padding:22px 24px 16px;border-bottom:1px solid rgba(52,152,219,0.15);display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:#3498db;letter-spacing:0.08em">📊 HISTÓRICO DE CICLOS</div>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase">Ciclos finalizados neste dispositivo</div>
+      </div>
+      <button onclick="fecharHistorico()" style="background:rgba(255,255,255,0.08);border:none;color:#fff;font-size:22px;cursor:pointer;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
+    </div>
+    <!-- Lista -->
+    <div id="hist-lista" style="padding:20px 24px;"></div>
+    <!-- Rodapé -->
+    <div style="padding:14px 24px;border-top:1px solid rgba(52,152,219,0.1);text-align:center;">
+      <button onclick="limparHistorico()" style="background:transparent;border:1px solid rgba(231,76,60,0.3);color:rgba(231,76,60,0.7);border-radius:4px;padding:8px 16px;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer">🗑 Limpar Histórico</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function abrirHistorico() {
+  const HIST_KEY = 'shoemix_historico';
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch(e) {}
+
+  const lista = document.getElementById('hist-lista');
+
+  if (!hist.length) {
+    lista.innerHTML = `
+      <div style="text-align:center;padding:40px 20px;font-family:'Barlow Condensed',sans-serif;color:var(--muted)">
+        <div style="font-size:40px;margin-bottom:12px">📋</div>
+        <div style="font-size:16px;text-transform:uppercase;letter-spacing:0.06em">Nenhum ciclo finalizado ainda</div>
+        <div style="font-size:13px;margin-top:8px">Os ciclos concluídos aparecerão aqui automaticamente.</div>
+      </div>`;
+  } else {
+    const fmtData = iso => {
+      const d = new Date(iso + 'T12:00:00');
+      return d.toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'short' });
+    };
+    const corPct = pct => pct >= 70 ? '#2ecc71' : pct >= 50 ? '#f39c12' : '#e74c3c';
+    const icoPct = pct => pct >= 70 ? '✅' : pct >= 50 ? '⚠️' : '❌';
+
+    lista.innerHTML = hist.map((h, i) => {
+      const d1Pct = h.d1?.pct ?? 0;
+      const d2Pct = h.d2?.pct ?? 0;
+      const geral = h.pctGeral ?? 0;
+      const dataCiclo = h.ciclo
+        ? `${fmtData(h.ciclo.inicio)} → ${fmtData(h.ciclo.fim)}`
+        : new Date(h.data).toLocaleDateString('pt-BR');
+      const nomeGerente = h.gerente?.nome || '—';
+      const loja = h.gerente?.loja ? `Loja ${h.gerente.loja}` : '';
+      const cidade = h.gerente?.cidade || '';
+
+      return `
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(52,152,219,0.12);border-radius:8px;padding:16px;margin-bottom:12px;">
+          <!-- Cabeçalho do card -->
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+            <div>
+              <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#3498db;letter-spacing:0.08em;text-transform:uppercase;font-weight:700">${dataCiclo}</div>
+              <div style="font-family:'Barlow Condensed',sans-serif;font-size:15px;color:#fff;font-weight:700;margin-top:2px">${nomeGerente}</div>
+              <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:var(--muted)">${loja}${loja && cidade ? ' · ' : ''}${cidade}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0;">
+              <div style="font-family:'Bebas Neue',sans-serif;font-size:36px;line-height:1;color:${corPct(geral)}">${geral}%</div>
+              <div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">${icoPct(geral)} Geral</div>
+            </div>
+          </div>
+          <!-- Barra geral -->
+          <div style="background:rgba(255,255,255,0.06);border-radius:4px;height:6px;margin-bottom:12px;overflow:hidden;">
+            <div style="height:100%;width:${geral}%;background:${corPct(geral)};border-radius:4px;transition:width 0.5s"></div>
+          </div>
+          <!-- Dia 1 e Dia 2 -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:10px 12px;">
+              <div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px">DIA 1${h.ciclo ? ' · ' + fmtData(h.ciclo.inicio) : ''}</div>
+              <div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:${corPct(d1Pct)};line-height:1">${d1Pct}%</div>
+              <div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;color:var(--muted);margin-top:2px">${h.d1?.sim ?? 0}/${h.d1?.total ?? 0} vistos</div>
+              <div style="background:rgba(255,255,255,0.06);border-radius:3px;height:4px;margin-top:6px;overflow:hidden;">
+                <div style="height:100%;width:${d1Pct}%;background:${corPct(d1Pct)};border-radius:3px"></div>
+              </div>
+            </div>
+            <div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:10px 12px;">
+              <div style="font-family:'Barlow Condensed',sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px">DIA 2${h.ciclo ? ' · ' + fmtData(h.ciclo.fim) : ''}</div>
+              <div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:${corPct(d2Pct)};line-height:1">${d2Pct}%</div>
+              <div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;color:var(--muted);margin-top:2px">${h.d2?.sim ?? 0}/${h.d2?.total ?? 0} vistos</div>
+              <div style="background:rgba(255,255,255,0.06);border-radius:3px;height:4px;margin-top:6px;overflow:hidden;">
+                <div style="height:100%;width:${d2Pct}%;background:${corPct(d2Pct)};border-radius:3px"></div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  document.getElementById('modal-historico').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+
+function fecharHistorico() {
+  document.getElementById('modal-historico').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function limparHistorico() {
+  if (!confirm('Tem certeza? O histórico de todos os ciclos será apagado permanentemente.')) return;
+  localStorage.removeItem('shoemix_historico');
+  fecharHistorico();
+}
+
+document.getElementById('modal-historico').addEventListener('click', function(e) {
+  if (e.target === this) fecharHistorico();
 });
 </script>
