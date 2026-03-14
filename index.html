@@ -3549,6 +3549,35 @@ function enviarParaSupervisao() {
   document.getElementById('sent-msg').textContent =
     `PDF gerado para ${gerente.nome} — Loja ${gerente.loja} (${gerente.cidade}) às ${horaStr}. ${p.sim} de ${p.total} processos confirmados.`;
 
+  // Monta mensagem WhatsApp com dados reais do ciclo
+  try {
+    const ci = getCicloInfo();
+    const pd = calcProgressoPorDia();
+    const dataFmt = new Date().toLocaleDateString('pt-BR');
+    const d1Nome = ci ? ci.d1Nome : 'Dia 1';
+    const d2Nome = ci ? ci.d2Nome : 'Dia 2';
+    const cicloNomes = ci ? `${ci.d1Nome}/${ci.d2Nome}` : 'Ciclo';
+    const msg =
+      `✅ Checklist Gerencial — Shoemix
+` +
+      `👤 Gerente: ${gerente.nome}
+` +
+      `🏪 Loja: ${gerente.loja} — ${gerente.cidade}
+` +
+      `📅 Data: ${dataFmt}
+` +
+      `📊 Conclusão ${d1Nome}: ${pd.d1.pct}% (${pd.d1.sim}/${pd.total} vistos)
+` +
+      `📊 Conclusão ${d2Nome}: ${pd.d2.pct}% (${pd.d2.sim}/${pd.total} vistos)
+` +
+      `📊 Geral ${cicloNomes}: ${p.pctSim}%
+
+` +
+      `📎 PDF em anexo`;
+    const btnWpp = document.getElementById('btn-whatsapp');
+    if (btnWpp) btnWpp.href = 'https://wa.me/5516981175458?text=' + encodeURIComponent(msg);
+  } catch(e) {}
+
   // Reset estado do checkbox de confirmação
   confirmouEnvio = false;
   const box   = document.getElementById('check-confirmou');
@@ -4339,6 +4368,25 @@ function salvarChecklistVencido() {
     document.getElementById('sent-pct').textContent = '—';
     document.getElementById('sent-msg').textContent =
       `Justificativa de ${gerenteNome} — Loja ${gerenteLoja} registrada para o ciclo ${fmtD(cicloAnt.inicio)} → ${fmtD(cicloAnt.fim)}. Envie o PDF para o Sr. Leonardo no WhatsApp.`;
+    // Mensagem WhatsApp para justificativa
+    try {
+      const dataFmt = new Date().toLocaleDateString('pt-BR');
+      const msg =
+        `⚠️ Justificativa de Checklist — Shoemix
+` +
+        `👤 Gerente: ${gerenteNome}
+` +
+        `🏪 Loja: ${gerenteLoja} — ${gerenteCidade||''}
+` +
+        `📅 Data: ${dataFmt}
+` +
+        `📋 Ciclo não realizado: ${fmtD(cicloAnt.inicio)} → ${fmtD(cicloAnt.fim)}
+
+` +
+        `📎 PDF de justificativa em anexo`;
+      const btnWpp = document.getElementById('btn-whatsapp');
+      if (btnWpp) btnWpp.href = 'https://wa.me/5516981175458?text=' + encodeURIComponent(msg);
+    } catch(e) {}
     confirmouEnvio = false;
     const box   = document.getElementById('check-confirmou');
     const label = document.getElementById('label-confirmou');
