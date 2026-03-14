@@ -3557,23 +3557,26 @@ function enviarParaSupervisao() {
     const d1Nome = ci ? ci.d1Nome : 'Dia 1';
     const d2Nome = ci ? ci.d2Nome : 'Dia 2';
     const cicloNomes = ci ? `${ci.d1Nome}/${ci.d2Nome}` : 'Ciclo';
+        // Calcula vistos/nao vistos por dia apos auto-fill
+    const totalDiaMsg = CATEGORIAS.reduce((a,c) => a + c.itens.filter(i=>i.diario).length, 0);
+    let d1SimMsg=0, d1NaoMsg=0, d2SimMsg=0, d2NaoMsg=0;
+    CATEGORIAS.forEach(cat => cat.itens.forEach(item => {
+      if (!item.diario) return;
+      if (respostas[item.id+'_d1']==='sim') d1SimMsg++; else d1NaoMsg++;
+      if (respostas[item.id+'_d2']==='sim') d2SimMsg++; else d2NaoMsg++;
+    }));
+    const d1PctMsg = totalDiaMsg ? Math.round((d1SimMsg/totalDiaMsg)*100) : 0;
+    const d2PctMsg = totalDiaMsg ? Math.round((d2SimMsg/totalDiaMsg)*100) : 0;
     const msg =
-      `✅ Checklist Gerencial — Shoemix
-` +
-      `👤 Gerente: ${gerente.nome}
-` +
-      `🏪 Loja: ${gerente.loja} — ${gerente.cidade}
-` +
-      `📅 Data: ${dataFmt}
-` +
-      `📊 Conclusão ${d1Nome}: ${pd.d1.pct}% (${pd.d1.sim}/${pd.total} vistos)
-` +
-      `📊 Conclusão ${d2Nome}: ${pd.d2.pct}% (${pd.d2.sim}/${pd.total} vistos)
-` +
-      `📊 Geral ${cicloNomes}: ${p.pctSim}%
-
-` +
-      `📎 PDF em anexo`;
+      '*Checklist Gerencial - Shoemix*\n' +
+      'Gerente: ' + gerente.nome + '\n' +
+      'Loja: ' + gerente.loja + ' - ' + gerente.cidade + '\n' +
+      'Data: ' + dataFmt + '\n\n' +
+      '*Resultados ' + cicloNomes + '*\n' +
+      d1Nome + ': ' + d1PctMsg + '% (' + d1SimMsg + ' vistos / ' + d1NaoMsg + ' nao vistos)\n' +
+      d2Nome + ': ' + d2PctMsg + '% (' + d2SimMsg + ' vistos / ' + d2NaoMsg + ' nao vistos)\n' +
+      'Geral do ciclo: ' + p.pctSim + '%\n\n' +
+      'PDF em anexo'
     const btnWpp = document.getElementById('btn-whatsapp');
     if (btnWpp) btnWpp.href = 'https://wa.me/5516981175458?text=' + encodeURIComponent(msg);
   } catch(e) {}
