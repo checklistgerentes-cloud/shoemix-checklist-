@@ -1532,6 +1532,39 @@
   </div>
 
   <!-- CARD PRAZO VENCIDO -->
+  <!-- CARD DOMINGO -->
+  <div class="login-card" id="card-domingo" style="display:none">
+    <div class="logo-area">
+      <div class="brand">SHOEMIX</div>
+      <div class="sub">Checklist Gerencial Diário</div>
+    </div>
+    <div style="text-align:center;padding:10px 0 20px">
+      <div style="font-size:52px;margin-bottom:16px">😴</div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--accent);letter-spacing:0.06em;margin-bottom:8px">DOMINGO — DIA DE DESCANSO</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;color:#ccc;line-height:1.6;margin-bottom:20px">
+        Não há checklist para preencher hoje.<br>
+        O próximo ciclo começa na <strong style="color:var(--accent)">segunda-feira</strong>.
+      </div>
+      <div style="background:rgba(232,184,75,0.08);border:1px solid rgba(232,184,75,0.2);border-radius:8px;padding:14px;font-family:'Barlow Condensed',sans-serif;font-size:14px;color:var(--muted);margin-bottom:20px">
+        📅 Ciclo 1 · Segunda + Terça<br>
+        📅 Ciclo 2 · Quarta + Quinta<br>
+        📅 Ciclo 3 · Sexta + Sábado
+      </div>
+    </div>
+    <div id="btn-reabrir-pdf-wrap-domingo" style="display:none;margin-bottom:10px">
+      <button onclick="reabrirUltimoPDF()" style="width:100%;background:transparent;border:1.5px solid rgba(255,92,58,0.4);color:#ff5c3a;border-radius:4px;padding:11px 16px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
+        📄 Reabrir último PDF gerado
+      </button>
+    </div>
+    <button onclick="abrirManual()" style="width:100%;background:transparent;border:1.5px solid rgba(232,184,75,0.35);color:var(--accent);border-radius:4px;padding:11px 16px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px">
+      📖 TIRE DÚVIDAS — MANUAL DE USO
+    </button>
+    <button onclick="abrirHistorico()" style="width:100%;background:transparent;border:1.5px solid rgba(52,152,219,0.35);color:#3498db;border-radius:4px;padding:11px 16px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
+      📊 HISTÓRICO DE CICLOS
+    </button>
+    <div class="date-display" id="login-date-dom"></div>
+  </div>
+
   <div class="login-card" id="card-prazo-vencido" style="display:none">
     <div class="logo-area">
       <div class="brand">SHOEMIX</div>
@@ -4713,6 +4746,24 @@ window.addEventListener('load', () => {
       }
     }
   } catch(e) {}
+
+  // 0-A. DOMINGO — nenhum ciclo disponível
+  if (new Date().getDay() === 0) {
+    document.getElementById('card-domingo').style.display = 'block';
+    document.getElementById('card-form').style.display = 'none';
+    document.getElementById('card-retomada').style.display = 'none';
+    document.getElementById('card-ciclo-ok').style.display = 'none';
+    document.getElementById('card-prazo-vencido').style.display = 'none';
+    const dateEl = document.getElementById('login-date-dom');
+    if (dateEl) dateEl.textContent = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+    // Mostra reabrir PDF se houver
+    const rawPdf = localStorage.getItem('shoemix_ultimo_pdf');
+    if (rawPdf) {
+      const wrapD = document.getElementById('btn-reabrir-pdf-wrap-domingo');
+      if (wrapD) wrapD.style.display = 'block';
+    }
+    return;
+  }
 
   // 0. Prazo vencido: ciclo anterior iniciado mas não finalizado no prazo
   const prazoVencido = verificarPrazoVencido();
