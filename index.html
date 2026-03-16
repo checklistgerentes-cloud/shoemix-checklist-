@@ -2085,6 +2085,14 @@ function loadLocalAnterior() {
     if (!raw) return null;
     const d = JSON.parse(raw);
     if (!d || !d.data || d.data === hoje()) return null;
+    // ── CORREÇÃO: ignora dados salvos em dias sem ciclo (ex: domingo) ──
+    if (!getCicloAtual(d.data)) return null;
+    // ── CORREÇÃO: ignora se o ciclo desses dados já foi concluído no SK_CICLO ──
+    const cicloDoDado = getCicloAtual(d.data);
+    if (cicloDoDado) {
+      const reg = JSON.parse(localStorage.getItem(SK_CICLO) || 'null');
+      if (reg && reg.concluido && reg.fim === cicloDoDado.fim) return null;
+    }
     // Se está no ciclo atual → NÃO é anterior (é retomada)
     const cicloHoje = getCicloAtual(hoje());
     if (cicloHoje && d.data >= cicloHoje.inicio && d.data <= cicloHoje.fim) return null;
@@ -4180,9 +4188,10 @@ function verificarPrazoVencido() {
     if(reg && reg.fim === cicloAnt.fim && reg.concluido) return false;
     const salvo = JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');
     if(salvo && !salvo.concluido && salvo.gerente && salvo.gerente.nome) {
-      if(salvo.data <= cicloAnt.fim) {
-        const cicloDoSalvo = getCicloAtual(salvo.data) || cicloAnt;
-        return { tipo: 'incompleto', ciclo: cicloDoSalvo, salvo };
+      // ── CORREÇÃO: ignora dados de dias sem ciclo (ex: domingo) ──
+      const cicloDoDadoSalvo = getCicloAtual(salvo.data);
+      if(cicloDoDadoSalvo && salvo.data <= cicloAnt.fim) {
+        return { tipo: 'incompleto', ciclo: cicloDoDadoSalvo, salvo };
       }
     }
     // Ciclo anterior NUNCA foi iniciado → exige justificativa
@@ -4748,7 +4757,7 @@ window.addEventListener('load', () => {
   } catch(e) {}
 
   // 0-A. DOMINGO — nenhum ciclo disponível
-  if (new Date().getDay() === 0) {
+  if (new Date(hoje()+'T12:00:00').getDay() === 0) {
     document.getElementById('card-domingo').style.display = 'block';
     document.getElementById('card-form').style.display = 'none';
     document.getElementById('card-retomada').style.display = 'none';
